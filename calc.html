@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Instalações Elétricas NBR 5410</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div class="container mx-auto max-w-md p-6 bg-white shadow-md rounded-lg">
+        <h1 class="text-2xl font-bold text-center mb-6">
+            Calculadora NBR 5410
+        </h1>
+
+        <button id="addCircuitBtn" class="w-full bg-green-500 text-white py-2 rounded-md mb-4">
+            Adicionar Circuito
+        </button>
+
+        <div id="circuitsContainer"></div>
+    </div>
+
+    <script>
+        class ElectricalCalculator {
+            constructor() {
+                this.circuits = [];
+                this.resistivityTable = {
+                    copper: 0.0172,
+                    aluminum: 0.0286
+                };
+
+                this.cableSectionTable = {
+                    lighting: [
+                        { maxCurrent: 10, section: 1.5 },
+                        { maxCurrent: 16, section: 2.5 },
+                        { maxCurrent: 25, section: 4 },
+                        { maxCurrent: 32, section: 6 }
+                    ],
+                    power: [
+                        { maxCurrent: 10, section: 2.5 },
+                        { maxCurrent: 16, section: 4 },
+                        { maxCurrent: 25, section: 6 },
+                        { maxCurrent: 32, section: 10 }
+                    ]
+                };
+
+                this.initEventListeners();
+                this.addCircuit();
+            }
+
+            initEventListeners() {
+                document.getElementById('addCircuitBtn').addEventListener('click', () => this.addCircuit());
+            }
+
+            addCircuit() {
+                const circuitId = Date.now();
+                const circuitName = `Circuito ${this.circuits.length + 1}`;
+
+                const circuitTemplate = `
+                    <div id="circuit-${circuitId}" class="mb-6 p-4 border rounded-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <input 
+                                type="text" 
+                                value="${circuitName}" 
+                                class="text-lg font-bold w-full mr-2 circuit-name"
+                                ${this.circuits.length > 0 ? `data-removable="true"` : ''}
+                            />
+                            ${this.circuits.length > 0 ? 
+                                `<button class="text-red-500 remove-circuit">Remover</button>` : 
+                                ''
+                            }
+                        </div>
+
+                        <div class="space-y-4">
+                            <select class="circuit-type w-full px-3 py-2 border rounded-md">
+                                <option value="lighting">Iluminação</option>
+                                <option value="power">Força</option>
+                            </select>
+
+                            <input 
+                                type="number" 
+                                placeholder="Tensão (V)" 
+                                class="circuit-voltage w-full px-3 py-2 border rounded-md"
+                            />
+                            
+                            <input 
+                                type="number" 
+                                placeholder="Potência (W)" 
+                                class="circuit-power w-full px-3 py-2 border rounded-md"
+                            />
+                            
+                            <input 
+                                type="number" 
+                                placeholder="Distância (m)" 
+                                class="circuit-distance w-full px-3 py-2 border rounded-md"
+                            />
+                            
+                            <button class="calculate-circuit w-full bg-blue-500 text-white py-2 rounded-md">
+                                Calcular
+                            </button>
+
+                            <div class="result-container hidden bg-gray-100 p-4 rounded-md mt-4"></div>
+                        </div>
+                    </div>
+                `;
+
+                const container = document.getElementById('circuitsContainer');
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = circuitTemplate.trim();
+                const circuitElement = tempDiv.firstChild;
+                container.appendChild(circuitElement);
+
+                this.circuits.push(circuitId);
+                this.bindCircuitEvents(circuitId);
+            }
+
+            bindCircuitEvents(circuitId) {
+                const circuitElement = document.getElementById(`circuit-${circuitId}`);
+                
+                // Remove circuit button
+                const removeButton = circuitElement.querySelector('.remove-circuit');
+                if (removeButton) {
+                    removeButton.addEventListener('click', () => {
+                        circuitElement.remove();
+                        this.circuits = this.circuits.filter(id => id !== circuitId);
+                    });
+                }
+
+                // Calculate circuit button
+                circuitElement.querySelector('.calculate-circuit').addEventListener('click', () => {
+                    const circuitType = circuitElement.querySelector('.circuit-type').value;
+                    const voltage = parseFloat(circuitElement.querySelector('.circuit-voltage').value);
+                    const power = parseFloat(circuitElement.querySelector('.circuit-power').value);
+                    const distance = parseFloat(circuitElement.querySelector('.circuit-distance').value);
+
+                    const result = this.calculateElectricalParams(circuitType, voltage, power, distance);
+                    this.displayResult(circuitElement, result);
+                });
+            }
+
+            calculateVoltageDrop(current, distance, section, voltage) {
+                const resistivity = this.resistivityTable.copper;
+                const specificResistance = resistivity / section;
+                return (current * 2 * distance * specificResistance / section) / voltage * 100;
+            }
+
+            calculateElectricalParams(circuitType, voltage, power, distance) {
+                const current = power / voltage;
+                
+                const selectedCableType = this.cableSectionTable[circuitType].find(
+                    cable => current <= cable.maxCurrent
+                );
+
+                const voltageDrop = selectedCableType 
+                    ? this.calculateVoltageDrop(current, distance, selectedCableType.section, voltage)
+                    : null;
+
+                const circuitBreaker = selectedCableType 
+                    ? Math.ceil(selectedCableType.maxCurrent * 1.25) 
+                    : null;
+
+                return {
+                    current: current.toFixed(2),
+                    voltageDrop: voltageDrop ? voltageDrop.toFixed(2) : 'N/A',
+                    cableSection: selectedCableType ? selectedCableType.section : 'N/A',
+                    circuitBreaker: circuitBreaker,
+                    nbrCompliance: voltageDrop <= 4
+                };
+            }
+
+            displayResult(circuitElement, result) {
+                const resultContainer = circuitElement.querySelector('.result-container');
+                resultContainer.innerHTML = `
+                    <h2 class="text-lg font-semibold mb-2">Resultados:</h2>
+                    <p>Corrente: <span class="font-bold">${result.current} A</span></p>
+                    <p>Queda de Tensão: <span class="font-bold">${result.voltageDrop}%</span></p>
+                    <p>Seção do Cabo: <span class="font-bold">${result.cableSection} mm²</span></p>
+                    <p>Disjuntor: <span class="font-bold">${result.circuitBreaker} A</span></p>
+                    <p>Conformidade: <span class="font-bold ${result.nbrCompliance ? 'text-blue-600' : 'text-red-600'}">
+                        ${result.nbrCompliance ? 'Atender a NBR 5410' : 'Não atender NBR 5410'}
+                    </span></p>
+                `;
+                resultContainer.classList.remove('hidden');
+            }
+        }
+
+        // Inicializar calculadora
+        new ElectricalCalculator();
+    </script>
+</body>
+</html>
